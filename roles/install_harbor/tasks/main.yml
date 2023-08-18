@@ -5,19 +5,19 @@
     dest: "{{ harbor_install_path }}/"
     remote_src: yes
 
-- name: harbor.cfg configuration
+- name: harbor.yml configuration
   template:
-    src: harbor.cfg.j2
-    dest: "{{harbor_install_path}}/harbor/harbor.cfg"
+    src: harbor.yml.j2
+    dest: "{{harbor_install_path}}/harbor/harbor.yml"
 
-- name: If add_notary=false, execute install.sh
+- name: If add_trivy=false, execute install.sh
   shell: "{{harbor_install_path}}/harbor/install.sh"
   args:
     chdir: "{{harbor_install_path}}/harbor/"
-  when: not add_notary
+  when: not add_trivy
 
-- name: If add_notary=true, execute install.sh --with-notary
-  shell: "{{harbor_install_path}}/harbor/install.sh --with-notary"
+- name: If add_trivy=true, execute install.sh --with-trivy
+  shell: "{{harbor_install_path}}/harbor/install.sh --with-trivy"
   args:
     chdir: "{{harbor_install_path}}/harbor/"
-  when: add_notary
+  when: add_trivy

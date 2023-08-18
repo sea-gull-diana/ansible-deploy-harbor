@@ -1,70 +1,55 @@
 ---
-- name: Install Docker engine
-  yum: name={{ item }} state=latest
-  with_items:
-    - docker-ce
-
-- name: Start and enable docker
-  systemd: name=docker state=started enabled=yes
-
-- name: Get docker-compose binary
-  get_url:
-    url: https://github.com/docker/compose/releases/download/{{ docker_compose_version}}/docker-compose-Linux-x86_64
-    dest: /usr/local/bin/docker-compose
-    mode: 0755
-
-#- name: Install python-pip
-## necessary if using Ansible OpenSSL module to generate CSR or selfsigned
-## not working as of today
-#  yum: name={{ item }} state=latest
-#  with_items:
-#    - python
-#    - python-pip
-#  when: generate_ssl
-
-#- name: Add PyOpenSSL 0.15 if generate_ssl 
-## necessary if using Ansible OpenSSL module to generate CSR or selfsigned
-## not working as of today
-#  pip:
-#    name: PyOpenSSL
-#    version: 0.15
-#  when: generate_ssl
-
 - name: Create necessary directory if generate_ssl=true
   file:
     path: "{{ item }}"
     state: directory
   with_items:
-    - /etc/ssl/private/
-    - /etc/ssl/public/
-    - /etc/ssl/ca/
-    - /etc/ssl/csr/
-    - /etc/docker/certs.d/{{ ansible_fqdn }}/
+    - /data/cert/
+    - /data/internal_cert/
+    - /etc/docker/certs.d/{{ harbor_hostname| default(ansible_fqdn) }}/
   when: generate_ssl
 
 - name: Generate CA if generate_ssl=true
   shell: openssl req -newkey rsa:4096 -nodes \
-          -sha256 -keyout /etc/ssl/ca/ca.key -x509 \
-          -days 365 -out /etc/ssl/ca/ca.crt \
-          -subj "/C=FR/ST=NAQ/L=Talence/O={{ ansible_domain| default("dummy") }}/CN={{ ansible_domain| default("dummy") }}"
+          -sha512 -keyout /data/cert/ca.key -x509 \
+          -days 365 -out /data/cert/ca.crt \
+          -subj "/C=FR/ST=Herault/L=Montpellier/O={{ ansible_domain| default("Groupe Isia") }}/CN={{ ansible_domain| default("dummy") }}"
   when: generate_ssl
 
 - name: Generate CSR from CA if generate_ssl=true
-  shell: openssl req -newkey rsa:4096 -nodes -sha256 \
-          -keyout /etc/ssl/private/{{ ansible_fqdn }}.key \
-          -out /etc/ssl/csr/{{ ansible_fqdn }}.csr \
-          -subj "/C=FR/ST=NAQ/L=Pessac/O={{ ansible_domain| default("dummy") }}/CN={{ ansible_fqdn }}"
+  shell: openssl req -newkey rsa:4096 -nodes -sha512 \
+          -keyout /data/cert/{{ harbor_hostname| default(ansible_fqdn) }}.key \
+          -out /data/cert/{{ harbor_hostname| default(ansible_fqdn) }}.csr \
+          -subj "/C=FR/ST=Herault/L=Montpellier/O={{ ansible_domain| default("Groupe Isia") }}/CN={{ harbor_hostname| default(ansible_fqdn) }}"
+  when: generate_ssl
+
+- name: Create x509 v3 extension file
+  template:
+    src: v3.ext.j2
+    dest: /data/cert/v3.ext
   when: generate_ssl
 
 - name: Generate self signed certificate from CSR if generate_ssl=true
-  shell: openssl x509 -req -days 365 -in /etc/ssl/csr/{{ ansible_fqdn }}.csr \
-          -CA /etc/ssl/ca/ca.crt -CAkey /etc/ssl/ca/ca.key \
-          -CAcreateserial -out /etc/ssl/public/{{ ansible_fqdn }}.crt 
+  shell: openssl x509 -req -days 365 -in /data/cert/{{ harbor_hostname| default(ansible_fqdn) }}.csr \
+          -extfile /data/cert/v3.ext \
+          -CA /data/cert/ca.crt -CAkey /data/cert/ca.key \
+          -CAcreateserial -out /data/cert/{{ harbor_hostname| default(ansible_fqdn) }}.crt 
   when: generate_ssl
 
 - name: Add ca.crt in autorised Docker CA if generate_ssl=true
   copy: 
-    src: /etc/ssl/ca/ca.crt
-    dest: /etc/docker/certs.d/{{ ansible_fqdn }}/ca.crt
+    src: /data/cert/ca.crt
+    dest: /etc/docker/certs.d/{{ harbor_hostname| default(ansible_fqdn) }}/ca.crt
     remote_src: yes
+  when: generate_ssl
+
+- name: Generate CA for internal use if generate_ssl=true
+  shell: openssl req -newkey rsa:4096 -nodes \
+          -sha512 -keyout /data/internal_cert/harbor_internal_ca.key -x509 \
+          -days 365 -out /data/internal_cert/harbor_internal_ca.crt \
+          -subj "/C=FR/ST=Herault/L=Montpellier/O={{ ansible_domain| default("Groupe Isia") }}/CN={{ ansible_domain| default("dummy") }}"
+  when: generate_ssl
+
+- name: Generate SSL certificates for internal use if generate_ssl=true
+  shell: docker run -v /:/hostfs goharbor/prepare:v2.8.2 gencert -p /data/internal_cert
   when: generate_ssl

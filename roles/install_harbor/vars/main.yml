@@ -1,1 +1,1 @@
-harbor_release_url: https://github.com/vmware/harbor/releases/download/v{{ harbor_offline_installer_version }}/harbor-offline-installer-v{{ harbor_offline_installer_version }}.tgz
+harbor_release_url: https://github.com/goharbor/harbor/releases/download/v{{ harbor_online_installer_version }}/harbor-online-installer-v{{ harbor_online_installer_version }}.tgz
